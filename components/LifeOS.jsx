@@ -164,6 +164,47 @@ export default function LifeOS() {
   const firstValue = portfolio.length ? [...portfolio].sort((a, b) => a.date.localeCompare(b.date))[0].value : 0;
   const portfolioDelta = latestValue - firstValue;
 
+  // --- Carteira automática (Trading212) ---
+  const [autoPortfolio, setAutoPortfolio] = useState(false);
+  const [autoLoaded, setAutoLoaded] = useState(false);
+  const [t212Data, setT212Data] = useState(null);
+  const [t212Loading, setT212Loading] = useState(false);
+  const [t212Error, setT212Error] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const a = await storage.get('auto-portfolio');
+        if (a) setAutoPortfolio(JSON.parse(a.value));
+      } catch (e) {}
+      setAutoLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!autoLoaded) return;
+    storage.set('auto-portfolio', JSON.stringify(autoPortfolio)).catch(() => {});
+  }, [autoPortfolio, autoLoaded]);
+
+  const fetchT212 = async () => {
+    setT212Loading(true);
+    setT212Error('');
+    try {
+      const data = await integrations.fetchTrading212();
+      if (data.error) throw new Error(data.detail || data.error);
+      setT212Data(data);
+      const today = new Date().toISOString().slice(0, 10);
+      setPortfolio(prev => [...prev.filter(p => p.date !== today), { date: today, value: data.total }].sort((a, b) => a.date.localeCompare(b.date)));
+    } catch (e) {
+      setT212Error('Não foi possível ligar ao Trading212. Confirma a TRADING212_API_KEY no Netlify.');
+    }
+    setT212Loading(false);
+  };
+
+  useEffect(() => {
+    if (autoLoaded && autoPortfolio) fetchT212();
+  }, [autoLoaded, autoPortfolio]);
+
   // --- Despesas mensais ---
   const [expenses, setExpenses] = useState([
     { id: 1, desc: 'Renda', value: 650, recurring: true },
@@ -506,15 +547,28 @@ export default function LifeOS() {
             {/* Carteira de ações */}
             <Panel pad={18} style={{ marginBottom: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
-                <Eyebrow color={C.cyan}>Carteira — Almost Daily Dividends + SpaceX</Eyebrow>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {['dia', 'mes'].map(r => (
+                <Eyebrow color={C.cyan}>Carteira{autoPortfolio ? ' — Trading212' : ''}</Eyebrow>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {autoPortfolio && (
+                    <button onClick={fetchT212} disabled={t212Loading} className="mono" style={{ fontSize: 10, padding: '4px 9px', background: 'transparent', border: `1px solid ${C.border}`, color: C.cyan, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: t212Loading ? 0.6 : 1 }}>
+                      <RefreshCw size={10} style={{ animation: t212Loading ? 'spin 1s linear infinite' : 'none' }} /> ATUALIZAR
+                    </button>
+                  )}
+                  <button onClick={() => setAutoPortfolio(!autoPortfolio)} className="mono" style={{ fontSize: 10, padding: '4px 9px', background: autoPortfolio ? `${C.cyan}14` : 'transparent', border: `1px solid ${autoPortfolio ? C.cyan : C.border}`, color: autoPortfolio ? C.cyan : C.faint, cursor: 'pointer' }}>
+                    {autoPortfolio ? 'AUTOMÁTICA' : 'MANUAL'}
+                  </button>
+                  {!autoPortfolio && ['dia', 'mes'].map(r => (
                     <button key={r} onClick={() => setRange(r)} className="mono" style={{ fontSize: 10, padding: '4px 9px', background: range === r ? `${C.cyan}14` : 'transparent', border: `1px solid ${range === r ? C.cyan : C.border}`, color: range === r ? C.cyan : C.faint, cursor: 'pointer' }}>
                       {r === 'dia' ? '7 DIAS' : 'MÊS'}
                     </button>
                   ))}
                 </div>
               </div>
+
+              {autoPortfolio && t212Error && (
+                <div className="mono" style={{ fontSize: 11.5, color: C.red, marginTop: 8 }}>{t212Error}</div>
+              )}
+
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, margin: '10px 0' }}>
                 <span className="disp" style={{ fontSize: 28, fontWeight: 700 }}>€{latestValue.toFixed(2)}</span>
                 <span className="mono" style={{ fontSize: 12, color: portfolioDelta >= 0 ? C.green : C.red }}>
@@ -531,13 +585,30 @@ export default function LifeOS() {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <input type="date" value={newEntry.date} onChange={e => setNewEntry({ ...newEntry, date: e.target.value })} className="mono" style={{ flex: 1, minWidth: 0, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 12.5, color: C.text, outline: 'none' }} />
-                <input type="number" value={newEntry.value} onChange={e => setNewEntry({ ...newEntry, value: e.target.value })} placeholder="Valor €" className="mono" style={{ flex: 1, minWidth: 0, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 12.5, color: C.text, outline: 'none' }} />
-                <button onClick={addPortfolioEntry} style={{ padding: '0 14px', background: C.cyan, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                  <Plus size={15} color={C.bg} />
-                </button>
-              </div>
+
+              {autoPortfolio && t212Data?.positions?.length > 0 && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                  {t212Data.positions.map((p, i) => (
+                    <div key={p.ticker || i} className="mono" style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: 11.5 }}>
+                      <span style={{ color: C.dim }}>{p.ticker} <span style={{ color: C.faint }}>· {p.quantity}x</span></span>
+                      <span style={{ color: C.text }}>€{(p.currentPrice * p.quantity).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="mono" style={{ fontSize: 10, color: C.faint, marginTop: 4 }}>
+                    atualizado {new Date(t212Data.fetchedAt).toLocaleTimeString('pt-PT')}
+                  </div>
+                </div>
+              )}
+
+              {!autoPortfolio && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <input type="date" value={newEntry.date} onChange={e => setNewEntry({ ...newEntry, date: e.target.value })} className="mono" style={{ flex: 1, minWidth: 0, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 12.5, color: C.text, outline: 'none' }} />
+                  <input type="number" value={newEntry.value} onChange={e => setNewEntry({ ...newEntry, value: e.target.value })} placeholder="Valor €" className="mono" style={{ flex: 1, minWidth: 0, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 12.5, color: C.text, outline: 'none' }} />
+                  <button onClick={addPortfolioEntry} style={{ padding: '0 14px', background: C.cyan, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                    <Plus size={15} color={C.bg} />
+                  </button>
+                </div>
+              )}
             </Panel>
 
             {/* Ordenado base */}
