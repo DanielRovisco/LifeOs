@@ -668,7 +668,7 @@ export default function LifeOS() {
           <div style={{ maxWidth: 760, width: '100%' }}>
             <h1 className="disp" style={{ fontSize: 28, fontWeight: 700, marginBottom: 18 }}>Notícias</h1>
             <Panel pad={18} style={{ marginBottom: 12 }}>
-              <Eyebrow color={C.cyan}>Pesquisa — últimos 3 dias</Eyebrow>
+              <Eyebrow color={C.cyan}>Pesquisa — Google News</Eyebrow>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <input
                   value={newsTopic}
@@ -692,8 +692,12 @@ export default function LifeOS() {
             {news && news.map((n, i) => (
               <Panel key={i} pad={18} style={{ marginBottom: 10 }}>
                 <Eyebrow color={C.cyan}>{`0${i + 1} · ${n.fonte || 'FONTE'}`}</Eyebrow>
-                <div className="disp" style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>{n.titulo}</div>
-                <div style={{ fontSize: 13.5, color: '#C5CBD2', lineHeight: 1.5 }}>{n.resumo}</div>
+                {n.link ? (
+                  <a href={n.link} target="_blank" rel="noopener noreferrer" className="disp" style={{ fontSize: 17, fontWeight: 700, marginBottom: 6, color: C.text, textDecoration: 'none', display: 'block' }}>{n.titulo}</a>
+                ) : (
+                  <div className="disp" style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>{n.titulo}</div>
+                )}
+                <div className="mono" style={{ fontSize: 12, color: C.dim, lineHeight: 1.5 }}>{n.resumo}</div>
               </Panel>
             ))}
 

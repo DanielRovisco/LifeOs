@@ -37,9 +37,7 @@ Abre `localhost:3000`.
 3. Liga o botão "Carteira automática" na página Finanças do site (por implementar na UI — a function já está pronta em `netlify/functions/trading212.js`)
 
 ### Notícias
-1. console.anthropic.com → API Keys → cria uma chave
-2. Netlify → Environment variables → `ANTHROPIC_API_KEY`
-3. Já funciona automaticamente na aba Notícias
+Usa o RSS do Google News — gratuito, sem chave API nenhuma. Já funciona automaticamente na aba Notícias.
 
 ### Saúde (Apple Watch via Health Auto Export)
 1. Segue as instruções no topo de `netlify/functions/health.js` para criar a conta de serviço Google
