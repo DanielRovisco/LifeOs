@@ -63,10 +63,67 @@ export default function LifeOS() {
     storage.set('tasks', JSON.stringify(tasks)).catch(() => {});
   }, [tasks, tasksLoaded]);
 
-  // --- Meta APY (cresce automaticamente sem precisar de input manual) ---
-  const [apy, setApy] = useState({ principal: 12450, rate: 3.5, startDate: '2026-06-01' });
-  const [editingApy, setEditingApy] = useState(false);
-  const [apyDraft, setApyDraft] = useState(apy);
+  // --- Objetivos financeiros (genérico: APY automático ou manual), persistidos ---
+  const [goals, setGoals] = useState([
+    { id: 1, title: 'Entrada da casa', mode: 'apy', principal: 12450, rate: 3.5, startDate: '2026-06-01', target: 30000, primary: true },
+    { id: 2, title: 'Custos da casa', mode: 'manual', current: 0, target: 5000, primary: false },
+    { id: 3, title: 'Veículo', mode: 'manual', current: 0, target: 8000, primary: false },
+  ]);
+  const [goalsLoaded, setGoalsLoaded] = useState(false);
+  const [editingGoalId, setEditingGoalId] = useState(null);
+  const [goalDraft, setGoalDraft] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const g = await storage.get('goals');
+        if (g) setGoals(JSON.parse(g.value));
+      } catch (e) {}
+      setGoalsLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!goalsLoaded) return;
+    storage.set('goals', JSON.stringify(goals)).catch(() => {});
+  }, [goals, goalsLoaded]);
+
+  const goalCurrentValue = (g) => {
+    if (g.mode === 'apy') {
+      const start = new Date(g.startDate);
+      const now = new Date();
+      const days = Math.max(0, (now - start) / (1000 * 60 * 60 * 24));
+      const dailyRate = (g.rate || 0) / 100 / 365;
+      return (g.principal || 0) * Math.pow(1 + dailyRate, days);
+    }
+    return g.current || 0;
+  };
+
+  const startEditingGoal = (g) => { setGoalDraft({ ...g }); setEditingGoalId(g.id); };
+
+  const saveGoal = () => {
+    setGoals(goals.map(g => g.id === editingGoalId ? {
+      ...goalDraft,
+      target: parseFloat(goalDraft.target) || 0,
+      principal: goalDraft.mode === 'apy' ? (parseFloat(goalDraft.principal) || 0) : undefined,
+      rate: goalDraft.mode === 'apy' ? (parseFloat(goalDraft.rate) || 0) : undefined,
+      current: goalDraft.mode === 'manual' ? (parseFloat(goalDraft.current) || 0) : undefined,
+    } : g));
+    setEditingGoalId(null);
+    setGoalDraft(null);
+  };
+
+  const setPrimaryGoal = (id) => setGoals(goals.map(g => ({ ...g, primary: g.id === id })));
+
+  const removeGoal = (id) => setGoals(goals.filter(g => g.id !== id));
+
+  const addGoal = () => {
+    const id = Date.now();
+    setGoals([...goals, { id, title: 'Novo objetivo', mode: 'manual', current: 0, target: 1000, primary: false }]);
+    startEditingGoal({ id, title: 'Novo objetivo', mode: 'manual', current: 0, target: 1000, primary: false });
+  };
+
+  const primaryGoal = goals.find(g => g.primary) || goals[0];
 
   // --- Carteira de ações (entradas manuais, persistidas) ---
   const [portfolio, setPortfolio] = useState([
@@ -82,10 +139,6 @@ export default function LifeOS() {
         const p = await storage.get('portfolio');
         if (p) setPortfolio(JSON.parse(p.value));
       } catch (e) {}
-      try {
-        const a = await storage.get('apy-goal');
-        if (a) { setApy(JSON.parse(a.value)); setApyDraft(JSON.parse(a.value)); }
-      } catch (e) {}
       setLoaded(true);
     })();
   }, []);
@@ -95,29 +148,10 @@ export default function LifeOS() {
     storage.set('portfolio', JSON.stringify(portfolio)).catch(() => {});
   }, [portfolio, loaded]);
 
-  useEffect(() => {
-    if (!loaded) return;
-    storage.set('apy-goal', JSON.stringify(apy)).catch(() => {});
-  }, [apy, loaded]);
-
-  // valor atual da meta, calculado por juro composto diário a partir da data de início
-  const apyCurrentValue = (() => {
-    const start = new Date(apy.startDate);
-    const now = new Date();
-    const days = Math.max(0, (now - start) / (1000 * 60 * 60 * 24));
-    const dailyRate = apy.rate / 100 / 365;
-    return apy.principal * Math.pow(1 + dailyRate, days);
-  })();
-
   const addPortfolioEntry = () => {
     if (!newEntry.date || !newEntry.value) return;
     setPortfolio([...portfolio.filter(p => p.date !== newEntry.date), { date: newEntry.date, value: parseFloat(newEntry.value) }].sort((a, b) => a.date.localeCompare(b.date)));
     setNewEntry({ date: '', value: '' });
-  };
-
-  const saveApy = () => {
-    setApy({ principal: parseFloat(apyDraft.principal), rate: parseFloat(apyDraft.rate), startDate: apyDraft.startDate });
-    setEditingApy(false);
   };
 
   const chartData = (() => {
@@ -264,7 +298,6 @@ export default function LifeOS() {
   const pending = tasks.filter(t => !t.done);
   const overdue = pending.filter(t => t.due && t.due < todayStr);
   const visibleTasks = taskFilter === 'TODAS' ? tasks : tasks.filter(t => t.area === taskFilter);
-  const pct = 41;
 
   return (
     <div style={{ minHeight: '100vh', width: '100%', background: C.bg, color: C.text, display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif', overflowX: 'hidden' }}>
@@ -332,17 +365,24 @@ export default function LifeOS() {
               </Panel>
             )}
 
-            <Panel pad={18} style={{ marginBottom: 12 }}>
-              <Eyebrow color={C.cyan}>Meta — entrada da casa</Eyebrow>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-                <span className="disp" style={{ fontSize: 32, fontWeight: 700 }}>€12.450</span>
-                <span className="mono" style={{ color: C.dim, fontSize: 12 }}>de €30.000 — faltam €17.550</span>
-              </div>
-              <div style={{ height: 6, background: C.border, position: 'relative', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, background: C.cyan, boxShadow: `0 0 14px ${C.cyan}` }} />
-              </div>
-              <div className="mono" style={{ marginTop: 6, fontSize: 11, color: C.cyan }}>{pct}% concluído</div>
-            </Panel>
+            {primaryGoal && (() => {
+              const val = goalCurrentValue(primaryGoal);
+              const pctGoal = Math.min(100, (val / primaryGoal.target) * 100);
+              const remaining = Math.max(0, primaryGoal.target - val);
+              return (
+                <Panel pad={18} style={{ marginBottom: 12 }}>
+                  <Eyebrow color={C.cyan}>Meta — {primaryGoal.title}</Eyebrow>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+                    <span className="disp" style={{ fontSize: 32, fontWeight: 700 }}>€{val.toFixed(2)}</span>
+                    <span className="mono" style={{ color: C.dim, fontSize: 12 }}>de €{primaryGoal.target.toLocaleString('pt-PT')} — faltam €{remaining.toFixed(2)}</span>
+                  </div>
+                  <div style={{ height: 6, background: C.border, position: 'relative', overflow: 'hidden' }}>
+                    <div style={{ position: 'absolute', inset: 0, width: `${pctGoal}%`, background: C.cyan, boxShadow: `0 0 14px ${C.cyan}` }} />
+                  </div>
+                  <div className="mono" style={{ marginTop: 6, fontSize: 11, color: C.cyan }}>{pctGoal.toFixed(1)}% concluído</div>
+                </Panel>
+              );
+            })()}
 
             {overdue.length > 0 && (
               <Panel pad={14} style={{ marginBottom: 12, borderColor: C.red }}>
@@ -395,37 +435,73 @@ export default function LifeOS() {
           <div style={{ maxWidth: 880, width: '100%' }}>
             <h1 className="disp" style={{ fontSize: 28, fontWeight: 700, marginBottom: 18 }}>Finanças</h1>
 
-            <Panel pad={18} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                <Eyebrow color={C.cyan}>Objetivo 1 — entrada da casa · conta APY {apy.rate}%</Eyebrow>
-                <button onClick={() => { setApyDraft(apy); setEditingApy(!editingApy); }} className="mono" style={{ background: 'none', border: `1px solid ${C.border}`, color: C.dim, fontSize: 10, padding: '3px 8px', cursor: 'pointer' }}>
-                  {editingApy ? 'FECHAR' : 'EDITAR'}
-                </button>
-              </div>
+            {/* Objetivos financeiros */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+              <Eyebrow color={C.cyan}>Objetivos</Eyebrow>
+              <button onClick={addGoal} className="mono" style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: `1px solid ${C.border}`, color: C.cyan, fontSize: 10, padding: '4px 9px', cursor: 'pointer' }}>
+                <Plus size={11} /> NOVO OBJETIVO
+              </button>
+            </div>
+            {goals.map((g) => {
+              const isEditing = editingGoalId === g.id;
+              const val = goalCurrentValue(g);
+              const goalPct = Math.min(100, (val / (g.target || 1)) * 100);
+              return (
+                <Panel key={g.id} pad={18} style={{ marginBottom: 12, borderColor: g.primary ? C.cyan : C.border }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <Eyebrow color={C.cyan}>{g.title}{g.mode === 'apy' ? ` · conta APY ${g.rate}%` : ''}{g.primary ? ' · NO PAINEL' : ''}</Eyebrow>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {!g.primary && (
+                        <button onClick={() => setPrimaryGoal(g.id)} className="mono" style={{ background: 'none', border: `1px solid ${C.border}`, color: C.dim, fontSize: 10, padding: '3px 8px', cursor: 'pointer' }}>
+                          MOSTRAR NO PAINEL
+                        </button>
+                      )}
+                      <button onClick={() => isEditing ? setEditingGoalId(null) : startEditingGoal(g)} className="mono" style={{ background: 'none', border: `1px solid ${C.border}`, color: C.dim, fontSize: 10, padding: '3px 8px', cursor: 'pointer' }}>
+                        {isEditing ? 'FECHAR' : 'EDITAR'}
+                      </button>
+                      <button onClick={() => removeGoal(g.id)} className="mono" style={{ background: 'none', border: `1px solid ${C.border}`, color: C.red, fontSize: 10, padding: '3px 8px', cursor: 'pointer' }}>
+                        ✕
+                      </button>
+                    </div>
+                  </div>
 
-              {editingApy ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <input type="number" value={apyDraft.principal} onChange={e => setApyDraft({ ...apyDraft, principal: e.target.value })} placeholder="Capital (€)" className="mono" style={{ flex: 1, minWidth: 100, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }} />
-                    <input type="number" value={apyDraft.rate} onChange={e => setApyDraft({ ...apyDraft, rate: e.target.value })} placeholder="Taxa APY %" className="mono" style={{ flex: 1, minWidth: 100, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }} />
-                    <input type="date" value={apyDraft.startDate} onChange={e => setApyDraft({ ...apyDraft, startDate: e.target.value })} className="mono" style={{ flex: 1, minWidth: 130, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }} />
-                  </div>
-                  <button onClick={saveApy} style={{ alignSelf: 'flex-start', padding: '7px 14px', background: C.cyan, border: 'none', color: C.bg, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Guardar</button>
-                </div>
-              ) : (
-                <>
-                  <div className="disp" style={{ fontSize: 32, fontWeight: 700, margin: '8px 0 12px' }}>
-                    €{apyCurrentValue.toFixed(2)} <span style={{ color: C.dim, fontSize: 16, fontWeight: 500 }}>/ €30.000</span>
-                  </div>
-                  <div style={{ height: 6, background: C.border, position: 'relative', overflow: 'hidden' }}>
-                    <div style={{ position: 'absolute', inset: 0, width: `${Math.min(100, (apyCurrentValue / 30000) * 100)}%`, background: C.cyan, boxShadow: `0 0 14px ${C.cyan}` }} />
-                  </div>
-                  <div className="mono" style={{ marginTop: 6, fontSize: 11, color: C.cyan }}>
-                    {((apyCurrentValue / 30000) * 100).toFixed(1)}% · cresce automaticamente todos os dias
-                  </div>
-                </>
-              )}
-            </Panel>
+                  {isEditing ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <input value={goalDraft.title} onChange={e => setGoalDraft({ ...goalDraft, title: e.target.value })} placeholder="Nome do objetivo" className="mono" style={{ flex: 2, minWidth: 140, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }} />
+                        <select value={goalDraft.mode} onChange={e => setGoalDraft({ ...goalDraft, mode: e.target.value })} className="mono" style={{ flex: 1, minWidth: 100, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }}>
+                          <option value="manual">MANUAL</option>
+                          <option value="apy">APY AUTOMÁTICO</option>
+                        </select>
+                        <input type="number" value={goalDraft.target} onChange={e => setGoalDraft({ ...goalDraft, target: e.target.value })} placeholder="Meta final (€)" className="mono" style={{ flex: 1, minWidth: 100, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }} />
+                      </div>
+                      {goalDraft.mode === 'apy' ? (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <input type="number" value={goalDraft.principal ?? ''} onChange={e => setGoalDraft({ ...goalDraft, principal: e.target.value })} placeholder="Capital (€)" className="mono" style={{ flex: 1, minWidth: 100, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }} />
+                          <input type="number" value={goalDraft.rate ?? ''} onChange={e => setGoalDraft({ ...goalDraft, rate: e.target.value })} placeholder="Taxa APY %" className="mono" style={{ flex: 1, minWidth: 100, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }} />
+                          <input type="date" value={goalDraft.startDate || ''} onChange={e => setGoalDraft({ ...goalDraft, startDate: e.target.value })} className="mono" style={{ flex: 1, minWidth: 130, background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }} />
+                        </div>
+                      ) : (
+                        <input type="number" value={goalDraft.current ?? ''} onChange={e => setGoalDraft({ ...goalDraft, current: e.target.value })} placeholder="Valor atual (€)" className="mono" style={{ background: C.bg, border: `1px solid ${C.border}`, padding: '8px 10px', fontSize: 13, color: C.text, outline: 'none' }} />
+                      )}
+                      <button onClick={saveGoal} style={{ alignSelf: 'flex-start', padding: '7px 14px', background: C.cyan, border: 'none', color: C.bg, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Guardar</button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="disp" style={{ fontSize: 32, fontWeight: 700, margin: '8px 0 12px' }}>
+                        €{val.toFixed(2)} <span style={{ color: C.dim, fontSize: 16, fontWeight: 500 }}>/ €{(g.target || 0).toLocaleString('pt-PT')}</span>
+                      </div>
+                      <div style={{ height: 6, background: C.border, position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ position: 'absolute', inset: 0, width: `${goalPct}%`, background: C.cyan, boxShadow: `0 0 14px ${C.cyan}` }} />
+                      </div>
+                      <div className="mono" style={{ marginTop: 6, fontSize: 11, color: C.cyan }}>
+                        {goalPct.toFixed(1)}% {g.mode === 'apy' ? '· cresce automaticamente todos os dias' : '· atualizado manualmente'}
+                      </div>
+                    </>
+                  )}
+                </Panel>
+              );
+            })}
 
             {/* Carteira de ações */}
             <Panel pad={18} style={{ marginBottom: 12 }}>
@@ -509,20 +585,6 @@ export default function LifeOS() {
             </Panel>
 
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px,1fr))', gap: 10, marginBottom: 12 }}>
-              <Panel>
-                <Eyebrow>Objetivo 2 — custos da casa</Eyebrow>
-                <div className="disp" style={{ fontSize: 24, fontWeight: 700, marginBottom: 10 }}>€0 / €5.000</div>
-                <div style={{ height: 5, background: C.border }}><div style={{ height: '100%', width: '0%', background: C.amber }} /></div>
-                <div className="mono" style={{ color: C.faint, fontSize: 11, marginTop: 8 }}>POR INICIAR</div>
-              </Panel>
-              <Panel>
-                <Eyebrow>Objetivo 3 — veículo</Eyebrow>
-                <div className="disp" style={{ fontSize: 24, fontWeight: 700, marginBottom: 10 }}>€0 / €8.000</div>
-                <div style={{ height: 5, background: C.border }}><div style={{ height: '100%', width: '0%', background: C.faint }} /></div>
-                <div className="mono" style={{ color: C.faint, fontSize: 11, marginTop: 8 }}>POR INICIAR</div>
-              </Panel>
-            </div>
             <Panel>
               <Eyebrow color={C.cyan}>Movimentos recentes</Eyebrow>
               {[
