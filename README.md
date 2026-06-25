@@ -47,6 +47,14 @@ Usa o RSS do Google News — gratuito, sem chave API nenhuma. Já funciona autom
 ### Casa (Home Assistant)
 Por implementar quando tiveres o HA a correr — a estrutura da aba já existe, só falta apontar para o IP local/URL do teu HA.
 
+### Adicionar tarefas via agente externo (ex: Cowork a ler o email)
+1. Gera uma chave secreta qualquer (ex: `openssl rand -hex 32`)
+2. Netlify → Environment variables → `TASKS_API_SECRET`
+3. O agente faz `POST` a `https://<o-teu-site>.netlify.app/.netlify/functions/add-task` com:
+   - Header `Authorization: Bearer <TASKS_API_SECRET>`
+   - Body JSON `{ "text": "...", "area": "PESSOAL" | "FINANÇAS", "due": "YYYY-MM-DD" }` (`area` e `due` são opcionais)
+4. A tarefa aparece na lista a seguir a abrires o site — escreve diretamente no `kv_store`, o mesmo sítio onde o site guarda as tarefas.
+
 ## Notas
 
 - Tudo o que estava em `window.storage` no protótipo agora vive em `kv_store` no Supabase (`lib/storage.js`) — persistência real, não se perde nunca.
