@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { storage } from '../lib/storage';
-import { integrations } from '../lib/db';
+import { integrations } from '../lib/integrations';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { Home, Wallet, CheckSquare, Cpu, Plus, ArrowUpRight, ArrowDownRight, Lightbulb, Lock, Thermometer, Check, Circle, Zap, Newspaper, RefreshCw, Activity, Heart, Footprints } from 'lucide-react';
 
